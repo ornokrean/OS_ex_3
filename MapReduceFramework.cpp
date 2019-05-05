@@ -9,10 +9,9 @@ struct ThreadContext {
 
 typedef struct {
     JobState state;
-    pthread_t threads[multiLevelThread];
-    ThreadContext contexts[multiLevelThread];
+    pthread_t* threads;
+    ThreadContext* contexts;
 }JobContext;
-
 
 
 
@@ -21,12 +20,17 @@ typedef struct {
 /*
  * The function produces a (K2*, V2*) pair
  * */
-void emit2 (K2* key, V2* value, void* context);
+void emit2 (K2* key, V2* value, void* context){
+    //TODO: Gets called by map function of client. Sort the values. Activate Barrier?
+    //TODO: ENDGAME: Zap Gil Segev out of existence.
+}
 
 /*
  * The function produces a (K3*, V3*) pair/
  * */
-void emit3 (K3* key, V3* value, void* context);
+void emit3 (K3* key, V3* value, void* context){
+    //TODO: Gets called by the reduce function of client. Save the values into the output Vector.
+}
 
 /*
  * This function starts running the MapReduce Algorithm.
@@ -38,8 +42,7 @@ void emit3 (K3* key, V3* value, void* context);
 JobHandle startMapReduceJob(const MapReduceClient& client,
                             const InputVec& inputVec, OutputVec& outputVec,
                             int multiThreadLevel){
-
-
+    //TODO: Create the struct with the context of the job. Start each thread with the map function.
 }
 /*
  * The function gets the job handle returned by startMapReduceJob and waits until its finished
