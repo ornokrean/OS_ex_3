@@ -1,9 +1,21 @@
-typedef void* JobHandle;
-enum stage_t {UNDEFINED_STAGE=0, MAP_STAGE=1, REDUCE_STAGE=2};
+#include "MapReduceFramework.h"
+#include <pthread.h>
+#include <cstdio>
+#include <atomic>
+
+struct ThreadContext {
+};
+
+
 typedef struct {
-    stage_t stage;
-    float percentage;
-} JobState;
+    JobState state;
+    pthread_t threads[multiLevelThread];
+    ThreadContext contexts[multiLevelThread];
+}JobContext;
+
+
+
+
 
 
 /*
