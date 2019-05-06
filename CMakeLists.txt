@@ -4,4 +4,6 @@ project(Ex3)
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_FLAGS -pthread)
 
-add_executable(Ex3 MapReduceFramework.cpp MapReduceFramework.h SampleClient.cpp Barrier.cpp Barrier.h)
+add_executable(Ex3 atomicdemo.cpp MapReduceFramework.cpp MapReduceFramework.h SampleClient.cpp
+        Barrier.cpp
+        Barrier.h)

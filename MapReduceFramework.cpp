@@ -4,8 +4,7 @@
 #include <atomic>
 
 struct ThreadContext {
-    K1* key;
-    V1* value;
+
 };
 
 
@@ -13,12 +12,32 @@ typedef struct {
     JobState state;
     pthread_t* threads;
     ThreadContext* contexts;
+    InputVec& inputVec;
+    OutputVec& outputVec;
+    std::atomic<int> atomic_index;
 }JobContext;
 
-
-static void* map(void* client){
+void* runit(void* args)
+{
 
 }
+
+void executeJob(int multiThreadLevel,const InputVec& inputVec){
+    //Init the context:
+    pthread_t threads[multiThreadLevel];
+    std::atomic<int> atomic_index(0);
+    JobState state = {UNDEFINED_STAGE, 0.0};
+    ThreadContext contexts[multiThreadLevel];
+    int old = 0;
+    while(old < multiThreadLevel)
+    {
+        old = atomic_index.fetch_add(1);
+        pthread_create(threads + old, nullptr, runit, contexts + old);
+    }
+    }
+
+}
+
 
 
 /*
@@ -26,7 +45,7 @@ static void* map(void* client){
  * */
 void emit2 (K2* key, V2* value, void* context){
     //TODO: Gets called by map function of client. Sort the values. Activate Barrier?
-    //TODO: ENDGAME: Zap Gil Segev out of existence.
+
 }
 
 /*
@@ -47,17 +66,7 @@ JobHandle startMapReduceJob(const MapReduceClient& client,
                             const InputVec& inputVec, OutputVec& outputVec,
                             int multiThreadLevel){
     //TODO: Create the struct with the context of the job. Start each thread with the map function.
-    //Init the context:
-    pthread_t threads[multiThreadLevel];
-    std::atomic<int> atomic_index(0);
-    JobState state = {UNDEFINED_STAGE, 0.0};
-    ThreadContext contexts[multiThreadLevel];
-
-    for (int i = 0; i < multiThreadLevel ; ++i)
-    {
-        pthread_create(threads+i, NULL, , contexts+i);
-    }
-
+    executeJob(multiThreadLevel,inputVec);
 }
 /*
  * The function gets the job handle returned by startMapReduceJob and waits until its finished
