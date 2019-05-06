@@ -4,6 +4,8 @@
 #include <atomic>
 
 struct ThreadContext {
+    K1* key;
+    V1* value;
 };
 
 
@@ -14,7 +16,9 @@ typedef struct {
 }JobContext;
 
 
+static void* map(void* client){
 
+}
 
 
 /*
@@ -43,6 +47,17 @@ JobHandle startMapReduceJob(const MapReduceClient& client,
                             const InputVec& inputVec, OutputVec& outputVec,
                             int multiThreadLevel){
     //TODO: Create the struct with the context of the job. Start each thread with the map function.
+    //Init the context:
+    pthread_t threads[multiThreadLevel];
+    std::atomic<int> atomic_index(0);
+    JobState state = {UNDEFINED_STAGE, 0.0};
+    ThreadContext contexts[multiThreadLevel];
+
+    for (int i = 0; i < multiThreadLevel ; ++i)
+    {
+        pthread_create(threads+i, NULL, , contexts+i);
+    }
+
 }
 /*
  * The function gets the job handle returned by startMapReduceJob and waits until its finished
