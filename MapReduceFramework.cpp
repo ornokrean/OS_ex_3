@@ -76,26 +76,63 @@ void shuffle(void *context)
         //Find the maximal key
         K2 *max = nullptr;
 
-        for (int i = 0; i < jC->mTL; ++i)
+        // Get an initial max key - to validate not working with a null key
+        for (auto &vec: *jC->intermediaryVecs)
         {
-            //TODO: Fix the damage I created:
-            if (jC->intermediaryVecs[i].back().first > max)
+            if (!vec.empty())
             {
-                max = jC->intermediaryVecs[i].back().first;
+                max = vec.back().first;
+                break;
             }
         }
-        // for each max
-        IntermediateVec vec;
-        for (int j = 0; j < jC->mTL; ++j)
+        if (max == nullptr)
         {
-            if (!(*jC->intermediaryVecs[j].back().first < *max) && !(*max < *jC->intermediaryVecs[j]
-                    .back().first))
+            //There are no pairs!!!!
+        }
+        //Find the max between the last elements of each intermediary vector:
+        for (auto &vec: *jC->intermediaryVecs)
+        {
+            if (!vec.empty())
             {
-                vec.push_back(jC->intermediaryVecs[j].back());
-                jC->intermediaryVecs[j].pop_back();
+                if (max < vec.back().first)
+                {
+                    max = vec.back().first;
+                }
             }
         }
-        jC->reduceVecs.push_back(vec);
+        IntermediateVec *maxVec;
+        for (auto &vec:*jC->intermediaryVecs){
+            if (!vec.empty()){
+                if (!(max<vec.back().first) && !(vec.back().first<max)){
+
+                }
+            }
+
+        }
+
+
+
+//        for (int i = 0; i < jC->mTL; ++i)
+//        {
+//            //TODO: Fix the damage I created:
+//
+//            if (jC->intermediaryVecs[i].back().first > max)
+//            {
+//                max = jC->intermediaryVecs[i].back().first;
+//            }
+//        }
+//        // for each max
+//        IntermediateVec vec;
+//        for (int j = 0; j < jC->mTL; ++j)
+//        {
+//            if (!(*jC->intermediaryVecs[j].back().first < *max) && !(*max < *jC->intermediaryVecs[j]
+//                    .back().first))
+//            {
+//                vec.push_back(jC->intermediaryVecs[j].back());
+//                jC->intermediaryVecs[j].pop_back();
+//            }
+//        }
+//        jC->reduceVecs.push_back(vec);
     }
 }
 
