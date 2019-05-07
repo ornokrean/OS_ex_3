@@ -98,19 +98,32 @@ void shuffle(void *context)
                 }
             }
         }
-        IntermediateVec *maxVec;
+        auto *maxVec = new IntermediateVec;
         for (auto &vec:*jC->intermediaryVecs)
         {
+            //Skip empty vectors
+            if (vec.empty())
+            {
+                continue;
+            }
             //Get all pairs with key max from the current vector
-            while (!vec.empty() && !(max < vec.back().first) && !(vec.back().first < max))
+            while (!(max < vec.back().first) && !(vec.back().first < max))
             {
                 maxVec->push_back(vec.back());
                 vec.pop_back();
+            }
+            //Update empty vectors
+            if (vec.empty())
+            {
+                numOfEmptyVecs++;
             }
 
         }
         jC->reduceVecs->emplace_back(maxVec);
 
+        //TODO: IS this really necessary?
+        delete (maxVec);
+        maxVec = nullptr;
     }
 
 
