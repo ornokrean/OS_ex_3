@@ -65,12 +65,10 @@ int compare(IntermediatePair first, IntermediatePair second)
 void shuffle(void *context)
 {
     auto jC = (JobContext *) context;
-    int x = 1;
+    int numOfEmptyVecs = 0; //TODO: Handle somehow updating this without repeating count of empty threads. Skip?
 
-    auto *emptyVecs = new std::vector<int>;
-
-
-    while (x)
+    //Run while there are still non empty vectors:
+    while (numOfEmptyVecs != jC->mTL)
     {
         //Is this actually necessary?
         //Find the maximal key
@@ -101,14 +99,19 @@ void shuffle(void *context)
             }
         }
         IntermediateVec *maxVec;
-        for (auto &vec:*jC->intermediaryVecs){
-            if (!vec.empty()){
-                if (!(max<vec.back().first) && !(vec.back().first<max)){
-
-                }
+        for (auto &vec:*jC->intermediaryVecs)
+        {
+            //Get all pairs with key max from the current vector
+            while (!vec.empty() && !(max < vec.back().first) && !(vec.back().first < max))
+            {
+                maxVec->push_back(vec.back());
+                vec.pop_back();
             }
 
         }
+        jC->reduceVecs->emplace_back(maxVec);
+
+    }
 
 
 
@@ -133,7 +136,7 @@ void shuffle(void *context)
 //            }
 //        }
 //        jC->reduceVecs.push_back(vec);
-    }
+}
 }
 
 
