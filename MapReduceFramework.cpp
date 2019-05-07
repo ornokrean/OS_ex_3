@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <iostream>
 #include "Barrier.h"
+#include <semaphore.h>
 
 typedef struct JobContext
 {
@@ -15,26 +16,38 @@ typedef struct JobContext
     OutputVec &outputVec;
     int mTL;
     const MapReduceClient &client;
-    std::vector<IntermediateVec> intermediaryVecs;
-    std::vector<IntermediateVec> reduceVecs;
-
+    std::vector<IntermediateVec> *intermediaryVecs;
+    //
+    std::vector<IntermediateVec> *reduceVecs;
+    // Barrier for after the sort phase
     Barrier *barrier;
-//
-//    JobContext(JobState state, pthread_t *threads, const InputVec &inputVec, std::atomic<int>
-//    *atomic_index, OutputVec &outputVec, const int mTL,
-//               const MapReduceClient &client,
-//               std::vector<IntermediateVec> intermediaryVecs)
-//    {
-//        this->state = state;
-//        this->threads = threads;
-//        this->inputVec = inputVec;
-//        this->atomic_index=atomic_index;
-//        this->mTL=mTL;
-//        this->outputVec=outputVec;
-//        this->client=client;
-//        this->intermediaryVecs=intermediaryVecs;
-//
-//    }
+    //Indicates the shuffle phase has finished
+    bool finishedShuffle = false;
+    //Indicates the job has finished
+    bool finishedRun = false;
+    //Mutex for the vectors worked on
+    pthread_mutex_t *vecMutex;
+    //Mutex for the state
+    pthread_mutex_t *stateMutex;
+    sem_t *sem;
+
+
+    JobContext(JobState state, pthread_t *threads, const InputVec &inputVec, std::atomic<int>
+    *atomic_index, OutputVec &outputVec, const int mTL,
+               const MapReduceClient &client,
+               std::vector<IntermediateVec> *intermediaryVecs, std::vector<IntermediateVec> *reduceVec,
+               Barrier *barrier,
+               pthread_mutex_t *vecMutex, pthread_mutex_t *stateMutex, sem_t *sem) : state(state), threads(threads),
+                                                                                     inputVec(inputVec),
+                                                                                     atomic_index(atomic_index),
+                                                                                     outputVec(outputVec),
+                                                                                     mTL(mTL), client(client),
+                                                                                     intermediaryVecs(intermediaryVecs),
+                                                                                     reduceVecs(reduceVec),
+                                                                                     barrier(barrier),
+                                                                                     vecMutex(vecMutex),
+                                                                                     stateMutex(stateMutex), sem(sem) {}
+
 } JobContext;
 
 
@@ -52,12 +65,20 @@ int compare(IntermediatePair first, IntermediatePair second)
 void shuffle(void *context)
 {
     auto jC = (JobContext *) context;
-    while()
+    int x = 1;
+
+    auto *emptyVecs = new std::vector<int>;
+
+
+    while (x)
     {
-        K2 *max = jC->intermediaryVecs[0].back().first;
+        //Is this actually necessary?
+        //Find the maximal key
+        K2 *max = nullptr;
 
         for (int i = 0; i < jC->mTL; ++i)
         {
+            //TODO: Fix the damage I created:
             if (jC->intermediaryVecs[i].back().first > max)
             {
                 max = jC->intermediaryVecs[i].back().first;
@@ -100,13 +121,14 @@ void *runThread(void *threadContext)
               tC->context->intermediaryVecs.at(tID).end(), compare);
     //Barrier:
     tC->context->barrier->barrier();
+
     //Shuffle:
     if (tC->threadID == 0)
     {
         shuffle(tC->context);
     }
     //Reduce:
-
+    //Access reduceVecs at the first free spot and run it
 
     return nullptr;
 }
@@ -157,35 +179,39 @@ JobHandle startMapReduceJob(const MapReduceClient &client,
     JobState state = {UNDEFINED_STAGE, 0.0};
     pthread_t threads[multiThreadLevel];
     auto *atomic_index = new std::atomic<int>(0);
-    std::vector<IntermediateVec> intermediaryVecs(multiThreadLevel);
-    std::vector<IntermediateVec> reduceVecs;
+    auto *intermediaryVecs = new std::vector<IntermediateVec>((size_t) multiThreadLevel);
+    auto *reduceVecs = new std::vector<IntermediateVec>((size_t) multiThreadLevel);
     auto *barrier = new Barrier(multiThreadLevel);
-    auto *context = new JobContext{state, threads, inputVec, atomic_index, outputVec,
-                                   multiThreadLevel,
-                                   client, intermediaryVecs, reduceVecs, barrier};
+    auto *vecMutex = new pthread_mutex_t();
+    auto *stateMutex = new pthread_mutex_t();
+    auto *sem = new sem_t;
+    auto context = new JobContext(state, threads, inputVec, atomic_index, outputVec,
+                                  multiThreadLevel,
+                                  client, intermediaryVecs, reduceVecs, barrier, vecMutex, stateMutex, sem);
 
 
     executeJob(context);
-    return context;
+    return (JobHandle) context;
 }
 
 /*
  * The function gets the job handle returned by startMapReduceJob and waits until its finished
  * */
 void waitForJob(JobHandle job)
-{}
+{
+    auto *jb = (JobContext *) job;
+
+}
 
 /*
  * The function gets a job handle and checks for its current state in a given JobState struct
  * */
-void getJobState(JobHandle job, JobState *state)
-{}
+void getJobState(JobHandle job, JobState *state) {}
 
 /*
  * Releases all resources of a job. After calling, job will be invalid.
  * */
-void closeJobHandle(JobHandle job)
-{}
+void closeJobHandle(JobHandle job) {}
 
 
 
