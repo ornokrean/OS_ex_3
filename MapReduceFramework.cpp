@@ -266,6 +266,7 @@ void executeJob(JobContext *context)
     std::vector<void *> arr;
     std::atomic<int> i;
 
+
     for ( i = 0; i < context->mTL; ++i)
     {
         arr.push_back(new ThreadContext{i, context});
