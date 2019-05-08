@@ -58,7 +58,9 @@ struct ThreadContext
 {
     int threadID;
     JobContext *context;
-    ThreadContext(int  threadID, JobContext* context):threadID(threadID),context(context){}
+    ThreadContext(int
+    threadID, JobContext*
+    context):threadID(threadID),context(context){}
 
 };
 /*
