@@ -104,51 +104,6 @@ void reduce(void *context)
         pthread_mutex_lock(tc->context->stateMutex);
         tc->context->numOfProccessedKeys += reduceVec->size();
         pthread_mutex_unlock(tc->context->stateMutex);
-/*
- *             _.---._
-             .'       `.
-             :)       (:
-             \ (@) (@) /
-              \   A   /
-               )     (
-               \"""""/
-                `._.'
-                 .=.
-         .---._.-.=.-._.---.
-        / ':-(_.-: :-._)-:` \
-       / /' (__.-: :-.__) `\ \
-      / /  (___.-` '-.___)  \ \
-     / /   (___.-'^`-.___)   \ \
-    / /    (___.-'=`-.___)    \ \
-   / /     (____.'=`.____)     \ \
-  / /       (___.'=`.___)       \ \
- (_.;       `---'.=.`---'       ;._)
- ;||        __  _.=._  __        ||;
- ;||       (  `.-.=.-.'  )       ||;
- ;||       \    `.=.'    /       ||;
- ;||        \    .=.    /        ||;
- ;||       .-`.`-._.-'.'-.       ||;
-.:::\      ( ,): O O :(, )      /:::.
-|||| `     / /'`--'--'`\ \     ' ||||
-''''      / /           \ \      ''''
-         / /             \ \
-        / /               \ \
-       / /                 \ \
-      / /                   \ \
-     / /                     \ \
-    /.'                       `.\
-   (_)'                       `(_)
-    \\.                       .//
-     \\.                     .//
-      \\.                   .//
-       \\.                 .//
-        \\.               .//
-         \\.             .//
-          \\.           .//
-          ///)         (\\\
-        ,///'           `\\\,
-       ///'               `\\\
-      ""'                   '""*/
 
 
     }
@@ -218,14 +173,14 @@ void shuffle(void *context)
 
         // Lock the reduce Vector with a mutex: We dont want a thread accessing it while we are updating it
         pthread_mutex_lock(jC->vecMutex);
-
         jC->reduceVecs->emplace_back(*maxVec);
 
         sem_post(jC->sem);
 
         pthread_mutex_unlock(jC->vecMutex);
-
+        maxVec->clear();
     }
+
     //Indicate Shuffle phase has finished:
     jC->finishedShuffle = true;
 
