@@ -21,15 +21,15 @@ typedef struct JobContext
     std::vector<IntermediateVec> *reduceVecs;
     // Barrier for after the sort phase
     Barrier *barrier;
-    //Indicates the shuffle phase has finished
-    bool finishedShuffle = false;
-    //Indicates the job has finished
-    bool finishedRun = false;
+
     //Mutex for the vectors worked on
     pthread_mutex_t *vecMutex;
     //Mutex for the state
     pthread_mutex_t *stateMutex;
     sem_t *sem;
+    //Indicates the shuffle phase has finished
+    bool finishedShuffle = false;
+    int numOfProccessedKeys = 0;
 
 
     JobContext(JobState state, pthread_t *threads, const InputVec &inputVec, std::atomic<int>
@@ -91,8 +91,6 @@ void reduce(void *context)
         pthread_mutex_unlock(tc->context->vecMutex);
 
         tc->context->client.reduce(reduceVec, tc->context);
-
-
 
 
     }
@@ -189,10 +187,13 @@ void *runThread(void *threadContext)
     //Map Phase:
     while (old < inVec.size())
     {
-        std::cout << "Thread number " << tID << " accessing inputVec at: " << old << "\n";
+//        std::cout << "Thread number " << tID << " accessing inputVec at: " << old << "\n";
         InputPair kv = inVec.at(old);
         tC->context->client.map(kv.first, kv.second, threadContext);
-        std::cout << kv.first << "   " << kv.second << "\n";
+
+        tC->context->numOfProccessedKeys++;
+
+//        std::cout << kv.first << "   " << kv.second << "\n";
         old = (size_t) tC->context->atomic_index->fetch_add(1);
     }
     //Sort Phase:
@@ -200,6 +201,8 @@ void *runThread(void *threadContext)
               tC->context->intermediaryVecs->at(tID).end(), compare);
     //Barrier:
     tC->context->barrier->barrier();
+    //TODO: Somehow do this right:
+    tC->context->numOfProccessedKeys = 0;
 
     //Shuffle:
     if (tC->threadID == 0)
@@ -241,7 +244,8 @@ void emit2(K2 *key, V2 *value, void *context)
 void emit3(K3 *key, V3 *value, void *context)
 {
     //TODO: Gets called by the reduce function of client. Save the values into the output Vector.
-
+    auto jc = (JobContext *) context;
+    jc->outputVec.push_back({key, value});
 
 }
 
@@ -288,7 +292,12 @@ void waitForJob(JobHandle job)
 /*
  * The function gets a job handle and checks for its current state in a given JobState struct
  * */
-void getJobState(JobHandle job, JobState *state) {}
+void getJobState(JobHandle job, JobState *state)
+{
+    auto *jc = (JobContext *) job;
+    float progress = (float) jc->numOfProccessedKeys / jc->inputVec.size();
+
+}
 
 /*
  * Releases all resources of a job. After calling, job will be invalid.
