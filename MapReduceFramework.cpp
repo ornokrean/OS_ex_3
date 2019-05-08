@@ -123,7 +123,7 @@ void shuffle(void *context)
     K2 *max = nullptr;
     auto *maxVec = new IntermediateVec;
     //Run while there are still non empty vectors:
-    while (numOfEmptyVecs < jC->mTL)
+    while (numOfEmptyVecs != jC->mTL-1)
     {
         // Get an initial max key - to validate not working with a null key
         for (auto &vec: *jC->intermediaryVecs)
