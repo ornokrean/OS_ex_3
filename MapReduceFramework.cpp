@@ -77,20 +77,22 @@ void reduce(void *context)
 
     while (!tc->context->reduceVecs->empty() || !tc->context->finishedShuffle)
     {
-
-        //run the reduce function on the first possible reduce vec
-
+        pthread_mutex_lock(tc->context->vecMutex);
         if (tc->context->reduceVecs->empty())
         {
+            pthread_mutex_unlock(tc->context->vecMutex);
             //State: Shuffle hasn't finished but there are no vectors to work on yet
             continue;
         }
-
         //Get the vector to reduce:
-        pthread_mutex_lock(tc->context->vecMutex);
         *reduceVec = tc->context->reduceVecs->back();
         tc->context->reduceVecs->pop_back();
+
         pthread_mutex_unlock(tc->context->vecMutex);
+
+        tc->context->client.reduce(reduceVec, tc->context);
+
+
 
 
     }
@@ -163,7 +165,7 @@ void shuffle(void *context)
 
         // Lock the reduce Vector with a mutex: We dont want a thread accessing it while we are updating it
         pthread_mutex_lock(jC->vecMutex);
-        jC->reduceVecs->emplace_back(maxVec);
+        jC->reduceVecs->emplace_back(*maxVec);
         pthread_mutex_unlock(jC->vecMutex);
         //TODO: IS this really necessary?
     }
@@ -239,6 +241,8 @@ void emit2(K2 *key, V2 *value, void *context)
 void emit3(K3 *key, V3 *value, void *context)
 {
     //TODO: Gets called by the reduce function of client. Save the values into the output Vector.
+
+
 }
 
 /*
@@ -257,8 +261,8 @@ JobHandle startMapReduceJob(const MapReduceClient &client,
     JobState state = {UNDEFINED_STAGE, 0.0};
     pthread_t threads[multiThreadLevel];
     auto *atomic_index = new std::atomic<int>(0);
-    auto *intermediaryVecs = new std::vector<IntermediateVec>((size_t) multiThreadLevel);
-    auto *reduceVecs = new std::vector<IntermediateVec>((size_t) multiThreadLevel);
+    auto *intermediaryVecs = new std::vector<IntermediateVec>((unsigned long) multiThreadLevel);
+    auto *reduceVecs = new std::vector<IntermediateVec>((unsigned long) multiThreadLevel);
     auto *barrier = new Barrier(multiThreadLevel);
     auto *vecMutex = new pthread_mutex_t();
     auto *stateMutex = new pthread_mutex_t();
