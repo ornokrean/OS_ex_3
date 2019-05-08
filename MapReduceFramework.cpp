@@ -32,7 +32,7 @@ typedef struct JobContext
     //Indicates the shuffle phase has finished
     bool finishedShuffle = false;
     int numOfProccessedKeys = 0;
-
+    bool joiningDone = false;
 
     JobContext(JobState state, pthread_t *threads, const InputVec &inputVec, std::atomic<int>
     *atomic_index, std::vector<ThreadContext *> *allContexts, OutputVec &outputVec, const int mTL,
@@ -121,7 +121,7 @@ void shuffle(void *context)
     auto jC = (JobContext *) context;
     int numOfEmptyVecs = 0;
     K2 *max = nullptr;
-    auto *maxVec = new IntermediateVec;
+    IntermediateVec maxVec;
     //Run while there are still non empty vectors:
     while (numOfEmptyVecs != jC->mTL - 1)
     {
@@ -162,7 +162,7 @@ void shuffle(void *context)
 
                 while (!vec.empty() && !(*max < *vec.back().first) && !(*vec.back().first < *max))
                 {
-                    maxVec->push_back(vec.back());
+                    maxVec.push_back(vec.back());
                     vec.pop_back();
                 }
                 //Update empty vectors
@@ -175,17 +175,15 @@ void shuffle(void *context)
 
         // Lock the reduce Vector with a mutex: We don't want a thread accessing it while we are updating it
         pthread_mutex_lock(jC->vecMutex);
-        jC->reduceVecs->emplace_back(*maxVec);
+        jC->reduceVecs->emplace_back(maxVec);
         pthread_mutex_unlock(jC->vecMutex);
         sem_post(jC->sem);
-        maxVec->clear();
+        maxVec.clear();
     }
 
     //Indicate Shuffle phase has finished:
     jC->finishedShuffle = true;
 
-    delete (maxVec);
-    maxVec = nullptr;
     delete (max); //TODO: Maybe this is troublesome, dunno
     max = nullptr;
 }
@@ -304,9 +302,13 @@ JobHandle startMapReduceJob(const MapReduceClient &client,
 void waitForJob(JobHandle job)
 {
     auto *jc = (JobContext *) job;
-    for (int i = 0; i < jc->mTL; ++i)
+    if (!jc->joiningDone)
     {
-        pthread_join(jc->threads[i], nullptr);
+        for (int i = 0; i < jc->mTL; ++i)
+        {
+            pthread_join(jc->threads[i], nullptr);
+        }
+        jc->joiningDone = true;
     }
 }
 
@@ -330,7 +332,10 @@ void getJobState(JobHandle job, JobState *state)
 void closeJobHandle(JobHandle job)
 {
     auto jc = (JobContext *) job;
-    waitForJob(job);
+    if (!jc->joiningDone)
+    {
+        waitForJob(job);
+    }
     pthread_mutex_destroy(jc->stateMutex);
     pthread_mutex_destroy(jc->vecMutex);
     delete[](jc->threads);
