@@ -123,9 +123,8 @@ void shuffle(void *context)
     K2 *max = nullptr;
     auto *maxVec = new IntermediateVec;
     //Run while there are still non empty vectors:
-    while (numOfEmptyVecs != jC->mTL)
+    while (numOfEmptyVecs < jC->mTL)
     {
-
         // Get an initial max key - to validate not working with a null key
         for (auto &vec: *jC->intermediaryVecs)
         {
@@ -137,6 +136,7 @@ void shuffle(void *context)
         }
         if (max == nullptr)
         {
+            break;
             //There are no pairs!!!!
         }
         //Find the max between the last elements of each intermediary vector:
@@ -153,30 +153,29 @@ void shuffle(void *context)
         // Create a vector for all pairs with max key:
         for (auto &vec:*jC->intermediaryVecs)
         {
-            //Skip empty vectors
-            if (vec.empty())
-            {
-                continue;
-            }
-            //Get all pairs with key max from the current vector
-            while (!(max < vec.back().first) && !(vec.back().first < max))
-            {
-                maxVec->push_back(vec.back());
-                vec.pop_back();
-            }
-            //Update empty vectors
-            if (vec.empty())
-            {
-                numOfEmptyVecs++;
-            }
 
+            //Skip empty vectors
+            if (!vec.empty())
+            {
+                //Get all pairs with key max from the current vector
+                while (!(max < vec.back().first) && !(vec.back().first < max))
+                {
+                    maxVec->push_back(vec.back());
+                    vec.pop_back();
+                }
+                //Update empty vectors
+                if (vec.empty())
+                {
+                    numOfEmptyVecs++;
+                }
+            }
         }
 
-        // Lock the reduce Vector with a mutex: We dont want a thread accessing it while we are updating it
+        // Lock the reduce Vector with a mutex: We don't want a thread accessing it while we are updating it
         pthread_mutex_lock(jC->vecMutex);
-        jC->reduceVecs->push_back(*maxVec);
-        sem_post(jC->sem);
+        jC->reduceVecs->emplace_back(*maxVec);
         pthread_mutex_unlock(jC->vecMutex);
+        sem_post(jC->sem);
         maxVec->clear();
     }
 
@@ -288,7 +287,7 @@ JobHandle startMapReduceJob(const MapReduceClient &client,
     auto *sem = new sem_t;
     sem_init(sem, 0, 0);
 
-    auto *allContexts = new std::vector<ThreadContext *>((unsigned long) multiThreadLevel);
+    auto *allContexts = new std::vector<ThreadContext *>();
     auto context = new JobContext(state, threads, inputVec, atomic_index, allContexts, outputVec,
                                   multiThreadLevel,
                                   client, intermediaryVecs, reduceVecs, barrier, vecMutex, stateMutex, sem);
