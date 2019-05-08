@@ -65,7 +65,7 @@ int compare(IntermediatePair first, IntermediatePair second)
 void shuffle(void *context)
 {
     auto jC = (JobContext *) context;
-    int numOfEmptyVecs = 0; //TODO: Handle somehow updating this without repeating count of empty threads. Skip?
+    int numOfEmptyVecs = 0;
 
     //Run while there are still non empty vectors:
     while (numOfEmptyVecs != jC->mTL)
