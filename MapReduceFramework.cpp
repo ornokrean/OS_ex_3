@@ -81,7 +81,7 @@ void reduce(void *context)
 
     auto *tc = (ThreadContext *) context;
     //Vector reduced each step
-    auto *reduceVec = new IntermediateVec;
+    auto *toReduce = new IntermediateVec;
 
     while (!tc->context->reduceVecs->empty() || !tc->context->finishedShuffle)
     {
@@ -95,22 +95,22 @@ void reduce(void *context)
         }
         //Get the vector to reduce:
 
-        *reduceVec = tc->context->reduceVecs->back();
+        *toReduce = tc->context->reduceVecs->back();
         tc->context->reduceVecs->pop_back();
 
 
         pthread_mutex_unlock(tc->context->vecMutex);
 
-        tc->context->client.reduce(reduceVec, tc->context);
+        tc->context->client.reduce(toReduce, tc->context);
         pthread_mutex_lock(tc->context->stateMutex);
-        tc->context->numOfProccessedKeys += reduceVec->size();
+        tc->context->numOfProccessedKeys += toReduce->size();
         pthread_mutex_unlock(tc->context->stateMutex);
 
 
     }
 
-    delete (reduceVec);
-    reduceVec = nullptr;
+    delete (toReduce);
+    toReduce = nullptr;
 
 
 }
@@ -277,7 +277,7 @@ JobHandle startMapReduceJob(const MapReduceClient &client,
     pthread_t threads[multiThreadLevel];
     auto *atomic_index = new std::atomic<int>(0);
     auto *intermediaryVecs = new std::vector<IntermediateVec>((unsigned long) multiThreadLevel);
-    auto *reduceVecs = new std::vector<IntermediateVec>((unsigned long) multiThreadLevel);
+    auto *reduceVecs = new std::vector<IntermediateVec>();
     auto *barrier = new Barrier(multiThreadLevel);
     //Mutexes:
     auto *vecMutex = new pthread_mutex_t();
