@@ -6,12 +6,13 @@
 #include <iostream>
 #include "Barrier.h"
 #include <semaphore.h>
-
+struct ThreadContext;
 typedef struct JobContext
 {
     JobState state;
     pthread_t *threads;
     const InputVec &inputVec;
+    std::vector<ThreadContext*> *allContexts;
     std::atomic<int> *atomic_index;
     OutputVec &outputVec;
     int mTL;
@@ -33,13 +34,15 @@ typedef struct JobContext
 
 
     JobContext(JobState state, pthread_t *threads, const InputVec &inputVec, std::atomic<int>
-    *atomic_index, OutputVec &outputVec, const int mTL,
+    *atomic_index, std::vector<ThreadContext*> *allContexts, OutputVec &outputVec, const int mTL,
                const MapReduceClient &client,
                std::vector<IntermediateVec> *intermediaryVecs, std::vector<IntermediateVec> *reduceVec,
                Barrier *barrier,
                pthread_mutex_t *vecMutex, pthread_mutex_t *stateMutex, sem_t *sem) : state(state), threads(threads),
                                                                                      inputVec(inputVec),
                                                                                      atomic_index(atomic_index),
+                                                                                     allContexts
+                                                                                     (allContexts),
                                                                                      outputVec(outputVec),
                                                                                      mTL(mTL), client(client),
                                                                                      intermediaryVecs(intermediaryVecs),
@@ -225,7 +228,8 @@ void shuffle(void *context)
 void *runThread(void *threadContext)
 {
 
-    auto *tC = (ThreadContext *) threadContext;
+
+    auto tC = (ThreadContext *) threadContext;
     InputVec inVec = tC->context->inputVec;
     auto tID = (size_t) tC->threadID;
     auto old = (size_t) tC->context->atomic_index->fetch_add(1);
@@ -263,16 +267,13 @@ void *runThread(void *threadContext)
 
 void executeJob(JobContext *context)
 {
-    std::vector<void *> arr;
     std::atomic<int> i;
-
-
     for ( i = 0; i < context->mTL; ++i)
     {
-        arr.push_back(new ThreadContext{i, context});
-        pthread_create(context->threads + i, nullptr, runThread, arr[i]);
+        auto *threadContext =new ThreadContext(i, context);
+        context->allContexts->push_back(threadContext);
+        pthread_create(context->threads + i, nullptr, runThread, threadContext);
     }
-    //delete all
 }
 
 
@@ -318,7 +319,8 @@ JobHandle startMapReduceJob(const MapReduceClient &client,
     auto *vecMutex = new pthread_mutex_t();
     auto *stateMutex = new pthread_mutex_t();
     auto *sem = new sem_t;
-    auto context = new JobContext(state, threads, inputVec, atomic_index, outputVec,
+    auto *allContexts = new std::vector<ThreadContext*>((unsigned long)multiThreadLevel);
+    auto context = new JobContext(state, threads, inputVec, atomic_index, allContexts,outputVec,
                                   multiThreadLevel,
                                   client, intermediaryVecs, reduceVecs, barrier, vecMutex, stateMutex, sem);
 
@@ -355,6 +357,28 @@ void getJobState(JobHandle job, JobState *state)
  * Releases all resources of a job. After calling, job will be invalid.
  * */
 void closeJobHandle(JobHandle job) {
+    auto jc = (JobContext*) job;
+    waitForJob(job);
+    pthread_mutex_destroy(jc->stateMutex);
+    pthread_mutex_destroy(jc->vecMutex);
+    delete[](jc->threads);
+    delete(jc->reduceVecs);
+    delete(jc->intermediaryVecs);
+    delete(jc->barrier);
+    delete(jc->atomic_index);
+    if (sem_destroy(jc->sem) == -1){
+        std::cerr<<"ERROR: cannot close semaphore"<<std::endl;
+        exit(1);
+    }
+    for(auto item : *jc->allContexts){
+        delete(item);
+    }
+    delete(jc->sem);
+    delete(jc->vecMutex);
+    delete(jc->stateMutex);
+    delete(jc);
+
+
 
 }
 
