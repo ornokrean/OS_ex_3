@@ -264,8 +264,9 @@ void *runThread(void *threadContext)
 void executeJob(JobContext *context)
 {
     std::vector<void *> arr;
-    //TODO: Fix thread number issue
-    for (int i = 0; i < context->mTL; ++i)
+    std::atomic<int> i;
+
+    for ( i = 0; i < context->mTL; ++i)
     {
         arr.push_back(new ThreadContext{i, context});
         pthread_create(context->threads + i, nullptr, runThread, arr[i]);
@@ -330,8 +331,11 @@ JobHandle startMapReduceJob(const MapReduceClient &client,
  * */
 void waitForJob(JobHandle job)
 {
-    auto *jb = (JobContext *) job;
-
+    auto *jc = (JobContext *) job;
+    for (int i = 0; i < jc->mTL; ++i)
+    {
+        pthread_join(jc->threads[i],NULL);
+    }
 }
 
 /*
@@ -340,14 +344,18 @@ void waitForJob(JobHandle job)
 void getJobState(JobHandle job, JobState *state)
 {
     auto *jc = (JobContext *) job;
-    float progress = (float) jc->numOfProccessedKeys / jc->inputVec.size();
-
+    float progress = 0;
+    if (!jc->inputVec.empty())
+         progress = (float) jc->numOfProccessedKeys / jc->inputVec.size();
+    *state = {jc->state.stage,progress*100};
 }
 
 /*
  * Releases all resources of a job. After calling, job will be invalid.
  * */
-void closeJobHandle(JobHandle job) {}
+void closeJobHandle(JobHandle job) {
+
+}
 
 
 
