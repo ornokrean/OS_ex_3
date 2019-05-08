@@ -58,8 +58,9 @@ struct ThreadContext
 {
     int threadID;
     JobContext *context;
-};
+    ThreadContext(int  threadID, JobContext* context):threadID(threadID),context(context){}
 
+};
 /*
  * Compare Function for pairs
  * */
@@ -270,7 +271,7 @@ void executeJob(JobContext *context)
     std::atomic<int> i;
     for ( i = 0; i < context->mTL; ++i)
     {
-        auto *threadContext =new ThreadContext(i, context);
+        auto *threadContext = new ThreadContext(i, context);
         context->allContexts->push_back(threadContext);
         pthread_create(context->threads + i, nullptr, runThread, threadContext);
     }
