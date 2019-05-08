@@ -325,14 +325,19 @@ JobHandle startMapReduceJob(const MapReduceClient &client,
     auto *intermediaryVecs = new std::vector<IntermediateVec>((unsigned long) multiThreadLevel);
     auto *reduceVecs = new std::vector<IntermediateVec>((unsigned long) multiThreadLevel);
     auto *barrier = new Barrier(multiThreadLevel);
+    //Mutexes:
     auto *vecMutex = new pthread_mutex_t();
+    pthread_mutex_init(vecMutex, nullptr);
     auto *stateMutex = new pthread_mutex_t();
+    pthread_mutex_init(stateMutex, nullptr);
+
     auto *sem = new sem_t;
+    sem_init(sem, 0, 0);
+
     auto *allContexts = new std::vector<ThreadContext *>((unsigned long) multiThreadLevel);
     auto context = new JobContext(state, threads, inputVec, atomic_index, allContexts, outputVec,
                                   multiThreadLevel,
                                   client, intermediaryVecs, reduceVecs, barrier, vecMutex, stateMutex, sem);
-
 
     executeJob(context);
     return (JobHandle) context;
@@ -346,7 +351,7 @@ void waitForJob(JobHandle job)
     auto *jc = (JobContext *) job;
     for (int i = 0; i < jc->mTL; ++i)
     {
-        pthread_join(jc->threads[i], NULL);
+        pthread_join(jc->threads[i], nullptr);
     }
 }
 
