@@ -85,6 +85,7 @@ void reduce(void *context)
 
     while (!tc->context->reduceVecs->empty() || !tc->context->finishedShuffle)
     {
+        sem_wait(tc->context->sem);
         pthread_mutex_lock(tc->context->vecMutex);
         if (tc->context->reduceVecs->empty())
         {
@@ -93,7 +94,7 @@ void reduce(void *context)
             continue;
         }
         //Get the vector to reduce:
-        sem_wait(tc->context->sem);
+
         *reduceVec = tc->context->reduceVecs->back();
         tc->context->reduceVecs->pop_back();
 
@@ -173,10 +174,8 @@ void shuffle(void *context)
 
         // Lock the reduce Vector with a mutex: We dont want a thread accessing it while we are updating it
         pthread_mutex_lock(jC->vecMutex);
-        jC->reduceVecs->emplace_back(*maxVec);
-
+        jC->reduceVecs->push_back(*maxVec);
         sem_post(jC->sem);
-
         pthread_mutex_unlock(jC->vecMutex);
         maxVec->clear();
     }
