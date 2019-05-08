@@ -69,6 +69,7 @@ int compare(IntermediatePair first, IntermediatePair second)
     return first.first < second.first;
 }
 
+
 void reduce(void *context)
 {
     //While there are still reduce vectors to work on
