@@ -123,8 +123,9 @@ void shuffle(void *context)
     K2 *max = nullptr;
     auto *maxVec = new IntermediateVec;
     //Run while there are still non empty vectors:
-    while (numOfEmptyVecs != jC->mTL-1)
+    while (numOfEmptyVecs != jC->mTL - 1)
     {
+        max = nullptr;
         // Get an initial max key - to validate not working with a null key
         for (auto &vec: *jC->intermediaryVecs)
         {
@@ -144,7 +145,7 @@ void shuffle(void *context)
         {
             if (!vec.empty())
             {
-                if (max < vec.back().first)
+                if (*max < *vec.back().first)
                 {
                     max = vec.back().first;
                 }
@@ -158,7 +159,8 @@ void shuffle(void *context)
             if (!vec.empty())
             {
                 //Get all pairs with key max from the current vector
-                while (!(max < vec.back().first) && !(vec.back().first < max))
+
+                while (!vec.empty() && !(*max < *vec.back().first) && !(*vec.back().first < *max))
                 {
                     maxVec->push_back(vec.back());
                     vec.pop_back();
@@ -199,8 +201,6 @@ void *runThread(void *threadContext)
     //Map Phase:
     while (old < inVec.size())
     {
-
-
         InputPair kv = inVec.at(old);
         tC->context->client.map(kv.first, kv.second, threadContext);
         old = (size_t) tC->context->atomic_index->fetch_add(1);
@@ -256,7 +256,9 @@ void emit2(K2 *key, V2 *value, void *context)
 void emit3(K3 *key, V3 *value, void *context)
 {
     auto jc = (JobContext *) context;
+    pthread_mutex_lock(jc->vecMutex);
     jc->outputVec.push_back({key, value});
+    pthread_mutex_unlock(jc->vecMutex);
 
 }
 
