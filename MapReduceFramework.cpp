@@ -57,22 +57,63 @@ struct ThreadContext
     JobContext *context;
 };
 
+/*
+ * Compare Function for pairs
+ * */
 int compare(IntermediatePair first, IntermediatePair second)
 {
     return first.first < second.first;
 }
 
+void reduce(void *context)
+{
+    //While there are still reduce vectors to work on
+    //Addendum: Or shuffle phase hasn't finished, since we don't want to stop working while there are still possible
+    //vectors that haven't been shuffled yet
+
+    auto *tc = (ThreadContext *) context;
+    //Vector reduced each step
+    auto *reduceVec = new IntermediateVec;
+
+    while (!tc->context->reduceVecs->empty() || !tc->context->finishedShuffle)
+    {
+
+        //run the reduce function on the first possible reduce vec
+
+        if (tc->context->reduceVecs->empty())
+        {
+            //State: Shuffle hasn't finished but there are no vectors to work on yet
+            continue;
+        }
+
+        //Get the vector to reduce:
+        pthread_mutex_lock(tc->context->vecMutex);
+        *reduceVec = tc->context->reduceVecs->back();
+        tc->context->reduceVecs->pop_back();
+        pthread_mutex_unlock(tc->context->vecMutex);
+
+
+    }
+
+    delete (reduceVec);
+    reduceVec = nullptr;
+
+
+}
+
+
 void shuffle(void *context)
 {
     auto jC = (JobContext *) context;
     int numOfEmptyVecs = 0;
-
+    K2 *max = nullptr;
+    auto *maxVec = new IntermediateVec;
     //Run while there are still non empty vectors:
     while (numOfEmptyVecs != jC->mTL)
     {
         //Is this actually necessary?
         //Find the maximal key
-        K2 *max = nullptr;
+
 
         // Get an initial max key - to validate not working with a null key
         for (auto &vec: *jC->intermediaryVecs)
@@ -98,7 +139,7 @@ void shuffle(void *context)
                 }
             }
         }
-        auto *maxVec = new IntermediateVec;
+        // Create a vector for all pairs with max key:
         for (auto &vec:*jC->intermediaryVecs)
         {
             //Skip empty vectors
@@ -119,37 +160,20 @@ void shuffle(void *context)
             }
 
         }
+
+        // Lock the reduce Vector with a mutex: We dont want a thread accessing it while we are updating it
+        pthread_mutex_lock(jC->vecMutex);
         jC->reduceVecs->emplace_back(maxVec);
-
+        pthread_mutex_unlock(jC->vecMutex);
         //TODO: IS this really necessary?
-        delete (maxVec);
-        maxVec = nullptr;
     }
+    //Indicate Shuffle phase has finished:
+    jC->finishedShuffle = true;
 
-
-
-//        for (int i = 0; i < jC->mTL; ++i)
-//        {
-//            //TODO: Fix the damage I created:
-//
-//            if (jC->intermediaryVecs[i].back().first > max)
-//            {
-//                max = jC->intermediaryVecs[i].back().first;
-//            }
-//        }
-//        // for each max
-//        IntermediateVec vec;
-//        for (int j = 0; j < jC->mTL; ++j)
-//        {
-//            if (!(*jC->intermediaryVecs[j].back().first < *max) && !(*max < *jC->intermediaryVecs[j]
-//                    .back().first))
-//            {
-//                vec.push_back(jC->intermediaryVecs[j].back());
-//                jC->intermediaryVecs[j].pop_back();
-//            }
-//        }
-//        jC->reduceVecs.push_back(vec);
-}
+    delete (maxVec);
+    maxVec = nullptr;
+    delete (max); //TODO: Maybe this is troublesome, dunno
+    max = nullptr;
 }
 
 
@@ -170,8 +194,8 @@ void *runThread(void *threadContext)
         old = (size_t) tC->context->atomic_index->fetch_add(1);
     }
     //Sort Phase:
-    std::sort(tC->context->intermediaryVecs.at(tID).begin(),
-              tC->context->intermediaryVecs.at(tID).end(), compare);
+    std::sort(tC->context->intermediaryVecs->at(tID).begin(),
+              tC->context->intermediaryVecs->at(tID).end(), compare);
     //Barrier:
     tC->context->barrier->barrier();
 
@@ -181,7 +205,8 @@ void *runThread(void *threadContext)
         shuffle(tC->context);
     }
     //Reduce:
-    //Access reduceVecs at the first free spot and run it
+    reduce(threadContext);
+
 
     return nullptr;
 }
@@ -205,7 +230,7 @@ void executeJob(JobContext *context)
 void emit2(K2 *key, V2 *value, void *context)
 {
     auto tC = (ThreadContext *) context;
-    tC->context->intermediaryVecs.at((size_t) tC->threadID).push_back({key, value});
+    tC->context->intermediaryVecs->at((size_t) tC->threadID).push_back({key, value});
 }
 
 /*
