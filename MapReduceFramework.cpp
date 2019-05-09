@@ -82,7 +82,7 @@ struct ThreadContext
  * */
 int compare(IntermediatePair first, IntermediatePair second)
 {
-    return first.first < second.first;
+    return *first.first < *second.first;
 }
 
 /*
@@ -123,7 +123,7 @@ void reduce(void *context)
 
 
     }
-    cerr<<"here-after reduce phase "<<endl;
+
     delete (toReduce);
     toReduce = nullptr;
 }
@@ -138,7 +138,7 @@ void shuffle(void *context)
     K2 *max = nullptr;
     IntermediateVec maxVec;
     //Run while there are still non empty vectors:
-    while (numOfEmptyVecs != jC->mTL - 1)
+    while (numOfEmptyVecs < /*!=*/jC->mTL /*- 1*/)
     {
 
         // Get an initial max key - to validate not working with a null key
@@ -172,7 +172,7 @@ void shuffle(void *context)
             //Skip empty vectors
             if (!vec.empty())
             {
-                //Get all pairs with key max from the current vector
+                //Get all pairs with key max from the current vector as long as it has some
                 while (!vec.empty() && !(*max < *vec.back().first) && !(*vec.back().first < *max))
                 {
                     maxVec.push_back(vec.back());
@@ -239,7 +239,6 @@ void *runThread(void *threadContext)
     auto *tC = (ThreadContext *) threadContext;
     auto tID = (size_t) tC->threadID;
     //Map Phase:
-    cerr<<"here-before map phase "<<tID<<endl;
     map(threadContext);
     //Sort Phase:
 
@@ -267,7 +266,6 @@ void *runThread(void *threadContext)
 //        pthread_mutex_unlock(tC->context->keyMutex);
         shuffle(tC->context);
     }
-    cerr<<"here-before reduce phase "<<tID<<endl;
     //Reduce:
     reduce(threadContext);
 
@@ -345,7 +343,6 @@ JobHandle startMapReduceJob(const MapReduceClient &client,
                                   multiThreadLevel,
                                   client, intermediaryVecs, reduceVecs, barrier, vecMutex, keyMutex, sem, totalKeys);
     executeJob(context);
-    cerr<<"here-smrj"<<endl;
     return (JobHandle) context;
 }
 
@@ -377,10 +374,10 @@ void getJobState(JobHandle job, JobState *state)
 {
     auto *jc = (JobContext *) job;
     float progress = 0;
-    if (!jc->inputVec.empty())
+    if (jc->numOfTotalKeys != 0)
     {
         progress = (float) jc->numOfProcessedKeys / jc->numOfTotalKeys;
-    }
+    } else { progress = 0; }
     *state = {jc->state.stage, progress * 100};
 }
 
