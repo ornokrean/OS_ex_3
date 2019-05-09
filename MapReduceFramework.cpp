@@ -123,11 +123,9 @@ void reduce(void *context)
 
 
     }
-
+    cerr<<"here-after reduce phase "<<endl;
     delete (toReduce);
     toReduce = nullptr;
-
-
 }
 
 /*
@@ -199,6 +197,13 @@ void shuffle(void *context)
     //Indicate Shuffle phase has finished:
     jC->finishedShuffle = true;
 
+    //Free all threads to work on reducing
+    for (int i = 0; i < jC->mTL; ++i)
+    {
+        sem_post(jC->sem);
+    }
+
+
     delete (max); //TODO: Maybe this is troublesome, dunno
     max = nullptr;
 }
@@ -232,15 +237,18 @@ void map(void *threadContext)
 void *runThread(void *threadContext)
 {
     auto *tC = (ThreadContext *) threadContext;
+    auto tID = (size_t) tC->threadID;
     //Map Phase:
+    cerr<<"here-before map phase "<<tID<<endl;
     map(threadContext);
     //Sort Phase:
-    auto tID = (size_t) tC->threadID;
+
     std::sort(tC->context->intermediaryVecs->at(tID).begin(),
               tC->context->intermediaryVecs->at(tID).end(), compare);
     //Barrier:
     tC->context->barrier->barrier();
     //Shuffle:
+
     if (tC->threadID == 0)
     {
         //Update Total Number of keys to fit reduce stage:
@@ -259,6 +267,7 @@ void *runThread(void *threadContext)
 //        pthread_mutex_unlock(tC->context->keyMutex);
         shuffle(tC->context);
     }
+    cerr<<"here-before reduce phase "<<tID<<endl;
     //Reduce:
     reduce(threadContext);
 
@@ -335,8 +344,8 @@ JobHandle startMapReduceJob(const MapReduceClient &client,
     auto context = new JobContext(state, threads, inputVec, atomic_index, threadContexts, outputVec,
                                   multiThreadLevel,
                                   client, intermediaryVecs, reduceVecs, barrier, vecMutex, keyMutex, sem, totalKeys);
-
     executeJob(context);
+    cerr<<"here-smrj"<<endl;
     return (JobHandle) context;
 }
 
@@ -346,6 +355,7 @@ JobHandle startMapReduceJob(const MapReduceClient &client,
 void waitForJob(JobHandle job)
 {
     auto *jc = (JobContext *) job;
+
     if (!jc->joiningDone)
     {
         for (int i = 0; i < jc->mTL; ++i)
