@@ -26,12 +26,13 @@ typedef struct JobContext
 
     //Mutex for the vectors worked on
     pthread_mutex_t *vecMutex;
-    //Mutex for the state
-    pthread_mutex_t *stateMutex;
+    //Mutex for the state: Protecting change of key counts
+    pthread_mutex_t *keyMutex;
     sem_t *sem;
     //Indicates the shuffle phase has finished
     bool finishedShuffle = false;
     int numOfProccessedKeys = 0;
+    int numOfTotalKeys;
     bool joiningDone = false;
 
     JobContext(JobState state, pthread_t *threads, const InputVec &inputVec, std::atomic<int>
@@ -39,18 +40,28 @@ typedef struct JobContext
                const MapReduceClient &client,
                std::vector<IntermediateVec> *intermediaryVecs, std::vector<IntermediateVec> *reduceVec,
                Barrier *barrier,
-               pthread_mutex_t *vecMutex, pthread_mutex_t *stateMutex, sem_t *sem) : state(state), threads(threads),
-                                                                                     inputVec(inputVec),
-                                                                                     atomic_index(atomic_index),
-                                                                                     allContexts
-                                                                                             (allContexts),
-                                                                                     outputVec(outputVec),
-                                                                                     mTL(mTL), client(client),
-                                                                                     intermediaryVecs(intermediaryVecs),
-                                                                                     reduceVecs(reduceVec),
-                                                                                     barrier(barrier),
-                                                                                     vecMutex(vecMutex),
-                                                                                     stateMutex(stateMutex), sem(sem) {}
+               pthread_mutex_t *vecMutex, pthread_mutex_t *stateMutex, sem_t *sem, int totalKeys) : state(state),
+                                                                                                    threads(threads),
+                                                                                                    inputVec(inputVec),
+                                                                                                    atomic_index(
+                                                                                                            atomic_index),
+                                                                                                    allContexts
+                                                                                                            (allContexts),
+                                                                                                    outputVec(
+                                                                                                            outputVec),
+                                                                                                    mTL(mTL),
+                                                                                                    client(client),
+                                                                                                    intermediaryVecs(
+                                                                                                            intermediaryVecs),
+                                                                                                    reduceVecs(
+                                                                                                            reduceVec),
+                                                                                                    barrier(barrier),
+                                                                                                    vecMutex(vecMutex),
+                                                                                                    keyMutex(
+                                                                                                            stateMutex),
+                                                                                                    sem(sem),
+                                                                                                    numOfTotalKeys(
+                                                                                                            totalKeys) {}
 
 } JobContext;
 
@@ -102,9 +113,9 @@ void reduce(void *context)
         pthread_mutex_unlock(tc->context->vecMutex);
 
         tc->context->client.reduce(toReduce, tc->context);
-        pthread_mutex_lock(tc->context->stateMutex);
+        pthread_mutex_lock(tc->context->keyMutex);
         tc->context->numOfProccessedKeys += toReduce->size();
-        pthread_mutex_unlock(tc->context->stateMutex);
+        pthread_mutex_unlock(tc->context->keyMutex);
 
 
     }
@@ -125,7 +136,7 @@ void shuffle(void *context)
     //Run while there are still non empty vectors:
     while (numOfEmptyVecs != jC->mTL - 1)
     {
-        max = nullptr;
+
         // Get an initial max key - to validate not working with a null key
         for (auto &vec: *jC->intermediaryVecs)
         {
@@ -154,12 +165,10 @@ void shuffle(void *context)
         // Create a vector for all pairs with max key:
         for (auto &vec:*jC->intermediaryVecs)
         {
-
             //Skip empty vectors
             if (!vec.empty())
             {
                 //Get all pairs with key max from the current vector
-
                 while (!vec.empty() && !(*max < *vec.back().first) && !(*vec.back().first < *max))
                 {
                     maxVec.push_back(vec.back());
@@ -172,13 +181,13 @@ void shuffle(void *context)
                 }
             }
         }
-
         // Lock the reduce Vector with a mutex: We don't want a thread accessing it while we are updating it
         pthread_mutex_lock(jC->vecMutex);
         jC->reduceVecs->emplace_back(maxVec);
         pthread_mutex_unlock(jC->vecMutex);
         sem_post(jC->sem);
         maxVec.clear();
+        max = nullptr;
     }
 
     //Indicate Shuffle phase has finished:
@@ -197,15 +206,18 @@ void *runThread(void *threadContext)
     auto tID = (size_t) tC->threadID;
     auto old = (size_t) tC->context->atomic_index->fetch_add(1);
     //Map Phase:
+    if (tC->context->state.stage != MAP_STAGE)
+    {
+        tC->context->state.stage = MAP_STAGE;
+    }
     while (old < inVec.size())
     {
         InputPair kv = inVec.at(old);
         tC->context->client.map(kv.first, kv.second, threadContext);
         old = (size_t) tC->context->atomic_index->fetch_add(1);
-        pthread_mutex_lock(tC->context->stateMutex);
-        tC->context->state.stage = MAP_STAGE;
+        pthread_mutex_lock(tC->context->keyMutex);
         tC->context->numOfProccessedKeys++;
-        pthread_mutex_unlock(tC->context->stateMutex);
+        pthread_mutex_unlock(tC->context->keyMutex);
     }
     //Sort Phase:
     std::sort(tC->context->intermediaryVecs->at(tID).begin(),
@@ -215,10 +227,20 @@ void *runThread(void *threadContext)
     //Shuffle:
     if (tC->threadID == 0)
     {
-        pthread_mutex_lock(tC->context->stateMutex);
+        //Update Total Number of keys to fit reduce stage:
+        int totalKeys = 0;
+        for (auto &vec : *tC->context->intermediaryVecs)
+        {
+            totalKeys += vec.size();
+        }
+
+        //Mutex Not really needed
+//        pthread_mutex_lock(tC->context->keyMutex);
+        // Update state to Reduce stage
         tC->context->numOfProccessedKeys = 0;
+        tC->context->numOfTotalKeys = totalKeys;
         tC->context->state.stage = REDUCE_STAGE;
-        pthread_mutex_unlock(tC->context->stateMutex);
+//        pthread_mutex_unlock(tC->context->keyMutex);
         shuffle(tC->context);
     }
     //Reduce:
@@ -238,14 +260,13 @@ void executeJob(JobContext *context)
     }
 }
 
-
 /*
  * The function produces a (K2*, V2*) pair
  * */
 void emit2(K2 *key, V2 *value, void *context)
 {
     auto tC = (ThreadContext *) context;
-    tC->context->intermediaryVecs->at((size_t) tC->threadID).push_back({key, value});
+    tC->context->intermediaryVecs->at((size_t) tC->threadID).emplace_back(key, value);
 }
 
 /*
@@ -255,7 +276,7 @@ void emit3(K3 *key, V3 *value, void *context)
 {
     auto jc = (JobContext *) context;
     pthread_mutex_lock(jc->vecMutex);
-    jc->outputVec.push_back({key, value});
+    jc->outputVec.emplace_back(key, value);
     pthread_mutex_unlock(jc->vecMutex);
 
 }
@@ -281,16 +302,17 @@ JobHandle startMapReduceJob(const MapReduceClient &client,
     //Mutexes:
     auto *vecMutex = new pthread_mutex_t();
     pthread_mutex_init(vecMutex, nullptr);
-    auto *stateMutex = new pthread_mutex_t();
-    pthread_mutex_init(stateMutex, nullptr);
+    auto *keyMutex = new pthread_mutex_t();
+    pthread_mutex_init(keyMutex, nullptr);
 
     auto *sem = new sem_t;
     sem_init(sem, 0, 0);
 
     auto *allContexts = new std::vector<ThreadContext *>();
+    auto totalKeys = inputVec.size();
     auto context = new JobContext(state, threads, inputVec, atomic_index, allContexts, outputVec,
                                   multiThreadLevel,
-                                  client, intermediaryVecs, reduceVecs, barrier, vecMutex, stateMutex, sem);
+                                  client, intermediaryVecs, reduceVecs, barrier, vecMutex, keyMutex, sem, totalKeys);
 
     executeJob(context);
     return (JobHandle) context;
@@ -321,7 +343,7 @@ void getJobState(JobHandle job, JobState *state)
     float progress = 0;
     if (!jc->inputVec.empty())
     {
-        progress = (float) jc->numOfProccessedKeys / jc->inputVec.size();
+        progress = (float) jc->numOfProccessedKeys / jc->numOfTotalKeys;
     }
     *state = {jc->state.stage, progress * 100};
 }
@@ -336,7 +358,7 @@ void closeJobHandle(JobHandle job)
     {
         waitForJob(job);
     }
-    pthread_mutex_destroy(jc->stateMutex);
+    pthread_mutex_destroy(jc->keyMutex);
     pthread_mutex_destroy(jc->vecMutex);
     delete[](jc->threads);
     delete (jc->reduceVecs);
@@ -354,7 +376,7 @@ void closeJobHandle(JobHandle job)
     }
     delete (jc->sem);
     delete (jc->vecMutex);
-    delete (jc->stateMutex);
+    delete (jc->keyMutex);
     delete (jc);
 
 
