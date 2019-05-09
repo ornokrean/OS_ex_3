@@ -8,7 +8,6 @@
 #include <semaphore.h>
 
 
-
 using namespace std;
 
 
@@ -21,7 +20,7 @@ typedef struct JobContext
     //The threads for the current job
     pthread_t *threads;
     //Vector for thread contexts: Only used for safe deleting once the job is over
-    std::vector<ThreadContext *> *allContexts;
+    std::vector<ThreadContext *> *threadContexts;
     //The Input vector
     const InputVec &inputVec;
     //Shared atomic index for the map phase
@@ -56,35 +55,15 @@ typedef struct JobContext
 
 
     JobContext(JobState state, pthread_t *threads, const InputVec &inputVec, std::atomic<int>
-    *atomic_index, std::vector<ThreadContext *> *allContexts, OutputVec &outputVec, const int mTL,
+    *atomic_index, std::vector<ThreadContext *> *threadContexts, OutputVec &outputVec, const int mTL,
                const MapReduceClient &client,
                std::vector<IntermediateVec> *intermediaryVecs, std::vector<IntermediateVec> *reduceVec,
                Barrier *barrier,
-               pthread_mutex_t *vecMutex, pthread_mutex_t *stateMutex, sem_t *sem, unsigned long totalKeys) : state(
-            state),
-                                                                                                              threads(threads),
-                                                                                                              inputVec(
-                                                                                                                      inputVec),
-                                                                                                              atomic_index(
-                                                                                                                      atomic_index),
-                                                                                                              allContexts
-                                                                                                                      (allContexts),
-                                                                                                              outputVec(
-                                                                                                                      outputVec),
-                                                                                                              mTL(mTL),
-                                                                                                              client(client),
-                                                                                                              intermediaryVecs(
-                                                                                                                      intermediaryVecs),
-                                                                                                              reduceVecs(
-                                                                                                                      reduceVec),
-                                                                                                              barrier(barrier),
-                                                                                                              vecMutex(
-                                                                                                                      vecMutex),
-                                                                                                              keyMutex(
-                                                                                                                      stateMutex),
-                                                                                                              sem(sem),
-                                                                                                              numOfTotalKeys(
-                                                                                                                      totalKeys) {}
+               pthread_mutex_t *vecMutex, pthread_mutex_t *keyMutex, sem_t *sem, unsigned long totalKeys) :
+            state(state), threads(threads), inputVec(inputVec), atomic_index(atomic_index),
+            threadContexts(threadContexts), outputVec(outputVec), mTL(mTL), client(client),
+            intermediaryVecs(intermediaryVecs), reduceVecs(reduceVec), barrier(barrier),
+            vecMutex(vecMutex), keyMutex(keyMutex), sem(sem), numOfTotalKeys(totalKeys) {}
 
 } JobContext;
 
@@ -223,6 +202,7 @@ void shuffle(void *context)
     delete (max); //TODO: Maybe this is troublesome, dunno
     max = nullptr;
 }
+
 /*
  * Map phase Handler
  * */
@@ -293,9 +273,10 @@ void executeJob(JobContext *context)
     for (int i = 0; i < context->mTL; ++i)
     {
         auto *threadContext = new ThreadContext(i, context);
-        context->allContexts->push_back(threadContext);
-        if (pthread_create(&context->threads[i], nullptr, runThread, threadContext)){
-            std::cerr<<"Thread Creation Failed!!!!"<<std::endl;
+        context->threadContexts->push_back(threadContext);
+        if (pthread_create(&context->threads[i], nullptr, runThread, threadContext))
+        {
+            std::cerr << "Thread Creation Failed!!!!" << std::endl;
             exit(1);
         }
     }
@@ -335,7 +316,7 @@ JobHandle startMapReduceJob(const MapReduceClient &client,
 {
     //Init the context:
     JobState state = {UNDEFINED_STAGE, 0.0};
-    auto *threads = (pthread_t*)malloc(sizeof(pthread_t)*multiThreadLevel);
+    auto *threads = (pthread_t *) malloc(sizeof(pthread_t) * multiThreadLevel);
     auto *atomic_index = new std::atomic<int>(0);
     auto *intermediaryVecs = new std::vector<IntermediateVec>((unsigned long) multiThreadLevel);
     auto *reduceVecs = new std::vector<IntermediateVec>();
@@ -349,9 +330,9 @@ JobHandle startMapReduceJob(const MapReduceClient &client,
     auto *sem = new sem_t;
     sem_init(sem, 0, 0);
 
-    auto *allContexts = new std::vector<ThreadContext *>();
+    auto *threadContexts = new std::vector<ThreadContext *>();
     auto totalKeys = inputVec.size();
-    auto context = new JobContext(state, threads, inputVec, atomic_index, allContexts, outputVec,
+    auto context = new JobContext(state, threads, inputVec, atomic_index, threadContexts, outputVec,
                                   multiThreadLevel,
                                   client, intermediaryVecs, reduceVecs, barrier, vecMutex, keyMutex, sem, totalKeys);
 
@@ -369,8 +350,9 @@ void waitForJob(JobHandle job)
     {
         for (int i = 0; i < jc->mTL; ++i)
         {
-            if(pthread_join(jc->threads[i], nullptr)){
-                std::cerr<<"Joining failed!!!"<<std::endl;
+            if (pthread_join(jc->threads[i], nullptr))
+            {
+                std::cerr << "Joining failed!!!" << std::endl;
                 exit(1);
             }
         }
@@ -414,7 +396,7 @@ void closeJobHandle(JobHandle job)
         std::cerr << "ERROR: cannot close semaphore" << std::endl;
         exit(1);
     }
-    for (auto item : *jc->allContexts)
+    for (auto item : *jc->threadContexts)
     {
         delete (item);
     }
