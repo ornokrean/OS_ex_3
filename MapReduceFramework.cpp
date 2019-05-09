@@ -224,7 +224,7 @@ void map(void *threadContext)
 {
     auto *tC = (ThreadContext *) threadContext;
     auto old = (size_t) tC->context->atomic_index->fetch_add(1);
-    //Map Phase:
+    //Set the stage to Map if it isn't already
     if (tC->context->state.stage != MAP_STAGE)
     {
         tC->context->state.stage = MAP_STAGE;
@@ -284,12 +284,14 @@ void *runThread(void *threadContext)
  * */
 void executeJob(JobContext *context)
 {
-    std::atomic<int> i;
-    for (i = 0; i < context->mTL; ++i)
+    for (int i = 0; i < context->mTL; ++i)
     {
         auto *threadContext = new ThreadContext(i, context);
         context->allContexts->push_back(threadContext);
-        pthread_create(context->threads + i, nullptr, runThread, threadContext);
+        if (pthread_create(context->threads + i, nullptr, runThread, threadContext)){
+            std::cerr<<"Thread Creation Failed!!!!"<<std::endl;
+            exit(1);
+        }
     }
 }
 
