@@ -7,6 +7,12 @@
 #include "Barrier.h"
 #include <semaphore.h>
 
+
+
+using namespace std;
+
+
+
 struct ThreadContext;
 typedef struct JobContext
 {
@@ -288,7 +294,7 @@ void executeJob(JobContext *context)
     {
         auto *threadContext = new ThreadContext(i, context);
         context->allContexts->push_back(threadContext);
-        if (pthread_create(context->threads + i, nullptr, runThread, threadContext)){
+        if (pthread_create(&context->threads[i], nullptr, runThread, threadContext)){
             std::cerr<<"Thread Creation Failed!!!!"<<std::endl;
             exit(1);
         }
@@ -329,7 +335,7 @@ JobHandle startMapReduceJob(const MapReduceClient &client,
 {
     //Init the context:
     JobState state = {UNDEFINED_STAGE, 0.0};
-    pthread_t threads[multiThreadLevel];
+    auto *threads = (pthread_t*)malloc(sizeof(pthread_t)*multiThreadLevel);
     auto *atomic_index = new std::atomic<int>(0);
     auto *intermediaryVecs = new std::vector<IntermediateVec>((unsigned long) multiThreadLevel);
     auto *reduceVecs = new std::vector<IntermediateVec>();
@@ -363,7 +369,10 @@ void waitForJob(JobHandle job)
     {
         for (int i = 0; i < jc->mTL; ++i)
         {
-            pthread_join(jc->threads[i], nullptr);
+            if(pthread_join(jc->threads[i], nullptr)){
+                std::cerr<<"Joining failed!!!"<<std::endl;
+                exit(1);
+            }
         }
         jc->joiningDone = true;
     }
