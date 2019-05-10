@@ -138,7 +138,7 @@ void shuffle(void *context)
     K2 *max = nullptr;
     IntermediateVec maxVec;
     //Run while there are still non empty vectors:
-    while (numOfEmptyVecs < /*!=*/jC->mTL /*- 1*/)
+    while (numOfEmptyVecs < jC->mTL)
     {
 
         // Get an initial max key - to validate not working with a null key
@@ -204,7 +204,7 @@ void shuffle(void *context)
     }
 
 
-    delete (max); //TODO: Maybe this is troublesome, dunno
+    delete (max);
     max = nullptr;
 }
 
@@ -393,7 +393,7 @@ void closeJobHandle(JobHandle job)
     }
     pthread_mutex_destroy(jc->keyMutex);
     pthread_mutex_destroy(jc->vecMutex);
-    delete[](jc->threads);
+    free (jc->threads);
     delete (jc->reduceVecs);
     delete (jc->intermediaryVecs);
     delete (jc->barrier);
@@ -407,6 +407,7 @@ void closeJobHandle(JobHandle job)
     {
         delete (item);
     }
+    delete(jc->threadContexts);
     delete (jc->sem);
     delete (jc->vecMutex);
     delete (jc->keyMutex);
