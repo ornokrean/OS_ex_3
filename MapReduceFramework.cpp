@@ -55,15 +55,19 @@ typedef struct JobContext
 
 
     JobContext(JobState state, pthread_t *threads, const InputVec &inputVec, std::atomic<int>
-    *atomic_index, std::vector<ThreadContext *> *threadContexts, OutputVec &outputVec, const int mTL,
+    *atomic_index, std::vector<ThreadContext *> *threadContexts, OutputVec &outputVec,
+               const int mTL,
                const MapReduceClient &client,
-               std::vector<IntermediateVec> *intermediaryVecs, std::vector<IntermediateVec> *reduceVec,
+               std::vector<IntermediateVec> *intermediaryVecs,
+               std::vector<IntermediateVec> *reduceVec,
                Barrier *barrier,
-               pthread_mutex_t *vecMutex, pthread_mutex_t *keyMutex, sem_t *sem, unsigned long totalKeys) :
+               pthread_mutex_t *vecMutex, pthread_mutex_t *keyMutex, sem_t *sem,
+               unsigned long totalKeys) :
             state(state), threads(threads), inputVec(inputVec), atomic_index(atomic_index),
             threadContexts(threadContexts), outputVec(outputVec), mTL(mTL), client(client),
             intermediaryVecs(intermediaryVecs), reduceVecs(reduceVec), barrier(barrier),
-            vecMutex(vecMutex), keyMutex(keyMutex), sem(sem), numOfTotalKeys(totalKeys) {}
+            vecMutex(vecMutex), keyMutex(keyMutex), sem(sem), numOfTotalKeys(totalKeys)
+    {}
 
 } JobContext;
 
@@ -73,9 +77,14 @@ struct ThreadContext
     int threadID;
     JobContext *context;
 
-    ThreadContext(int threadID, JobContext *context) : threadID(threadID), context(context) {}
+    ThreadContext(int threadID, JobContext *context) : threadID(threadID), context(context)
+    {}
 
 };
+
+int getMaxVector(const JobContext *jC, int numOfEmptyVecs, const K2 *max, IntermediateVec &maxVec);
+
+K2 *findMaxKey(const JobContext *jC, K2 *max);
 
 /*
  * Compare Function for pairs
@@ -91,8 +100,8 @@ int compare(IntermediatePair first, IntermediatePair second)
 void reduce(void *context)
 {
     //While there are still reduce vectors to work on
-    //Addendum: Or shuffle phase hasn't finished, since we don't want to stop working while there are still possible
-    //vectors that haven't been shuffled yet
+    //Addendum: Or shuffle phase hasn't finished, since we don't want to stop working while there
+    // are still possible vectors that haven't been shuffled yet
 
     auto *tc = (ThreadContext *) context;
     //Vector reduced each step
@@ -156,36 +165,11 @@ void shuffle(void *context)
             //There are no pairs!!!!
         }
         //Find the max between the last elements of each intermediary vector:
-        for (auto &vec: *jC->intermediaryVecs)
-        {
-            if (!vec.empty())
-            {
-                if (*max < *vec.back().first)
-                {
-                    max = vec.back().first;
-                }
-            }
-        }
+        max = findMaxKey(jC, max);
         // Create a vector for all pairs with max key:
-        for (auto &vec:*jC->intermediaryVecs)
-        {
-            //Skip empty vectors
-            if (!vec.empty())
-            {
-                //Get all pairs with key max from the current vector as long as it has some
-                while (!vec.empty() && !(*max < *vec.back().first) && !(*vec.back().first < *max))
-                {
-                    maxVec.push_back(vec.back());
-                    vec.pop_back();
-                }
-                //Update empty vectors
-                if (vec.empty())
-                {
-                    numOfEmptyVecs++;
-                }
-            }
-        }
-        // Lock the reduce Vector with a mutex: We don't want a thread accessing it while we are updating it
+        numOfEmptyVecs = getMaxVector(jC, numOfEmptyVecs, max, maxVec);
+        // Lock the reduce Vector with a mutex: We don't want a thread accessing it while we are
+        // updating it
         pthread_mutex_lock(jC->vecMutex);
         jC->reduceVecs->emplace_back(maxVec);
         pthread_mutex_unlock(jC->vecMutex);
@@ -206,6 +190,50 @@ void shuffle(void *context)
 
     delete (max);
     max = nullptr;
+}
+/*
+ * This function finds the max between the last elements of each intermediary vector given.
+ *
+ * */
+K2 *findMaxKey(const JobContext *jC, K2 *max)
+{
+    for (auto &vec: *jC->intermediaryVecs)
+        {
+            if (!vec.empty())
+            {
+                if (*max < *vec.back().first)
+                {
+                    max = vec.back().first;
+                }
+            }
+        }
+    return max;
+}
+
+/*
+ * This function finds the max vector and Creates a vector for all pairs with max key
+ * */
+int getMaxVector(const JobContext *jC, int numOfEmptyVecs, const K2 *max, IntermediateVec &maxVec)
+{
+    for (auto &vec:*jC->intermediaryVecs)
+        {
+            //Skip empty vectors
+            if (!vec.empty())
+            {
+                //Get all pairs with key max from the current vector as long as it has some
+                while (!vec.empty() && !(*max < *vec.back().first) && !(*vec.back().first < *max))
+                {
+                    maxVec.push_back(vec.back());
+                    vec.pop_back();
+                }
+                //Update empty vectors
+                if (vec.empty())
+                {
+                    numOfEmptyVecs++;
+                }
+            }
+        }
+    return numOfEmptyVecs;
 }
 
 /*
@@ -276,7 +304,7 @@ void executeJob(JobContext *context)
         context->threadContexts->push_back(threadContext);
         if (pthread_create(&context->threads[i], nullptr, runThread, threadContext))
         {
-            std::cerr << "Thread Creation Failed!!!!" << std::endl;
+            std::cerr << "ERROR: Thread Creation Failed!!!!" << std::endl;
             exit(1);
         }
     }
@@ -300,7 +328,6 @@ void emit3(K3 *key, V3 *value, void *context)
     pthread_mutex_lock(jc->vecMutex);
     jc->outputVec.emplace_back(key, value);
     pthread_mutex_unlock(jc->vecMutex);
-
 }
 
 /**
@@ -334,7 +361,8 @@ JobHandle startMapReduceJob(const MapReduceClient &client,
     auto totalKeys = inputVec.size();
     auto context = new JobContext(state, threads, inputVec, atomic_index, threadContexts, outputVec,
                                   multiThreadLevel,
-                                  client, intermediaryVecs, reduceVecs, barrier, vecMutex, keyMutex, sem, totalKeys);
+                                  client, intermediaryVecs, reduceVecs, barrier, vecMutex, keyMutex,
+                                  sem, totalKeys);
     executeJob(context);
     return (JobHandle) context;
 }
@@ -352,7 +380,7 @@ void waitForJob(JobHandle job)
         {
             if (pthread_join(jc->threads[i], nullptr))
             {
-                std::cerr << "Joining failed!!!" << std::endl;
+                std::cerr << "ERROR: Joining failed!!!" << std::endl;
                 exit(1);
             }
         }
@@ -371,7 +399,9 @@ void getJobState(JobHandle job, JobState *state)
     if (jc->numOfTotalKeys != 0)
     {
         progress = (float) jc->numOfProcessedKeys / jc->numOfTotalKeys;
-    } else { progress = 0; }
+    }
+    else
+    { progress = 0; }
     *state = {jc->state.stage, progress * 100};
 }
 
@@ -387,7 +417,7 @@ void closeJobHandle(JobHandle job)
     }
     pthread_mutex_destroy(jc->keyMutex);
     pthread_mutex_destroy(jc->vecMutex);
-    free (jc->threads);
+    free(jc->threads);
     delete (jc->reduceVecs);
     delete (jc->intermediaryVecs);
     delete (jc->barrier);
@@ -401,7 +431,7 @@ void closeJobHandle(JobHandle job)
     {
         delete (item);
     }
-    delete(jc->threadContexts);
+    delete (jc->threadContexts);
     delete (jc->sem);
     delete (jc->vecMutex);
     delete (jc->keyMutex);
