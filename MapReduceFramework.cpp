@@ -178,6 +178,7 @@ void shuffle(void *context)
         max = nullptr;
     }
 
+
     //Indicate Shuffle phase has finished:
     jC->finishedShuffle = true;
 
