@@ -188,7 +188,6 @@ void shuffle(void *context)
         sem_post(jC->sem);
     }
 
-
     delete (max);
     max = nullptr;
 }
