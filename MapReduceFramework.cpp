@@ -54,17 +54,16 @@ typedef struct JobContext
     unsigned long numOfTotalKeys;
 
 
-    JobContext(JobState state, pthread_t *threads, const InputVec &inputVec, std::atomic<int>
-    *atomic_index, std::vector<ThreadContext *> *threadContexts, OutputVec &outputVec,
-               const int mTL,
-               const MapReduceClient &client,
+    JobContext(JobState state, pthread_t *threads, std::vector<ThreadContext *> *threadContexts,
+               const InputVec &inputVec, std::atomic<int> *atomic_index, OutputVec &outputVec,
+               const int mTL, const MapReduceClient &client,
                std::vector<IntermediateVec> *intermediaryVecs,
-               std::vector<IntermediateVec> *reduceVec,
-               Barrier *barrier,
+               std::vector<IntermediateVec> *reduceVec, Barrier *barrier,
                pthread_mutex_t *vecMutex, pthread_mutex_t *keyMutex, sem_t *sem,
                unsigned long totalKeys) :
-            state(state), threads(threads), inputVec(inputVec), atomic_index(atomic_index),
-            threadContexts(threadContexts), outputVec(outputVec), mTL(mTL), client(client),
+            state(state), threads(threads), threadContexts(threadContexts), inputVec(inputVec),
+            atomic_index(atomic_index), outputVec(outputVec), mTL(mTL), client(client),
+
             intermediaryVecs(intermediaryVecs), reduceVecs(reduceVec), barrier(barrier),
             vecMutex(vecMutex), keyMutex(keyMutex), sem(sem), numOfTotalKeys(totalKeys)
     {}
@@ -188,9 +187,11 @@ void shuffle(void *context)
         sem_post(jC->sem);
     }
 
+
     delete (max);
     max = nullptr;
 }
+
 /*
  * This function finds the max between the last elements of each intermediary vector given.
  *
@@ -198,15 +199,15 @@ void shuffle(void *context)
 K2 *findMaxKey(const JobContext *jC, K2 *max)
 {
     for (auto &vec: *jC->intermediaryVecs)
+    {
+        if (!vec.empty())
         {
-            if (!vec.empty())
+            if (*max < *vec.back().first)
             {
-                if (*max < *vec.back().first)
-                {
-                    max = vec.back().first;
-                }
+                max = vec.back().first;
             }
         }
+    }
     return max;
 }
 
@@ -216,23 +217,23 @@ K2 *findMaxKey(const JobContext *jC, K2 *max)
 int getMaxVector(const JobContext *jC, int numOfEmptyVecs, const K2 *max, IntermediateVec &maxVec)
 {
     for (auto &vec:*jC->intermediaryVecs)
+    {
+        //Skip empty vectors
+        if (!vec.empty())
         {
-            //Skip empty vectors
-            if (!vec.empty())
+            //Get all pairs with key max from the current vector as long as it has some
+            while (!vec.empty() && !(*max < *vec.back().first) && !(*vec.back().first < *max))
             {
-                //Get all pairs with key max from the current vector as long as it has some
-                while (!vec.empty() && !(*max < *vec.back().first) && !(*vec.back().first < *max))
-                {
-                    maxVec.push_back(vec.back());
-                    vec.pop_back();
-                }
-                //Update empty vectors
-                if (vec.empty())
-                {
-                    numOfEmptyVecs++;
-                }
+                maxVec.push_back(vec.back());
+                vec.pop_back();
+            }
+            //Update empty vectors
+            if (vec.empty())
+            {
+                numOfEmptyVecs++;
             }
         }
+    }
     return numOfEmptyVecs;
 }
 
@@ -357,9 +358,9 @@ JobHandle startMapReduceJob(const MapReduceClient &client,
     auto *sem = new sem_t;
     sem_init(sem, 0, 0);
 
-    auto *threadContexts = new std::vector<ThreadContext *>();
+    auto *threadContexts = new std::vector<ThreadContext *>((unsigned long) multiThreadLevel);
     auto totalKeys = inputVec.size();
-    auto context = new JobContext(state, threads, inputVec, atomic_index, threadContexts, outputVec,
+    auto context = new JobContext(state, threads, threadContexts, inputVec, atomic_index, outputVec,
                                   multiThreadLevel,
                                   client, intermediaryVecs, reduceVecs, barrier, vecMutex, keyMutex,
                                   sem, totalKeys);
@@ -429,12 +430,11 @@ void closeJobHandle(JobHandle job)
     }
     for (auto item : *jc->threadContexts)
     {
-        delete (item);
+        delete item;
     }
     delete (jc->threadContexts);
     delete (jc->sem);
     delete (jc->vecMutex);
     delete (jc->keyMutex);
     delete (jc);
-
 }
