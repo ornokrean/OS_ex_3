@@ -241,13 +241,11 @@ void *runThread(void *threadContext)
     //Map Phase:
     map(threadContext);
     //Sort Phase:
-
     std::sort(tC->context->intermediaryVecs->at(tID).begin(),
               tC->context->intermediaryVecs->at(tID).end(), compare);
     //Barrier:
     tC->context->barrier->barrier();
     //Shuffle:
-
     if (tC->threadID == 0)
     {
         //Update Total Number of keys to fit reduce stage:
@@ -256,19 +254,14 @@ void *runThread(void *threadContext)
         {
             totalKeys += vec.size();
         }
-
-        //Mutex Not really needed
-//        pthread_mutex_lock(tC->context->keyMutex);
         // Update state to Reduce stage
         tC->context->numOfProcessedKeys = 0;
         tC->context->numOfTotalKeys = totalKeys;
         tC->context->state.stage = REDUCE_STAGE;
-//        pthread_mutex_unlock(tC->context->keyMutex);
         shuffle(tC->context);
     }
     //Reduce:
     reduce(threadContext);
-
     return nullptr;
 }
 
@@ -366,6 +359,7 @@ void waitForJob(JobHandle job)
         jc->joiningDone = true;
     }
 }
+
 
 /**
  * The function gets a job handle and checks for its current state in a given JobState struct
